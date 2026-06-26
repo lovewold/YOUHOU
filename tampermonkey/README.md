@@ -23,7 +23,7 @@
 9. 再次点击「执行」正式处理。
 10. 执行结束后复制或下载日志。
 
-如果点击账户名称后跳转到 `localads.chengzijianzhan.cn/lamp/pc/cdp_promotion/promote-manage/project?...` 新页面，脚本会自动检测未完成任务。正式执行时因为浏览器安全限制，跳转后需要重新选择 CSV，再点击「继续」。
+如果点击账户名称后跳转到 `localads.chengzijianzhan.cn/lamp/pc/cdp_promotion/promote-manage/project?...` 新页面，脚本会自动检测未完成任务。正式执行前选择一次 CSV 即可，脚本会缓存 CSV 内容，跳转后点击「继续」会自动恢复并上传同一个 CSV。
 
 ## 3. 面板字段
 

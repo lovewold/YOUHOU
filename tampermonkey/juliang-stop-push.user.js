@@ -21,6 +21,7 @@
 
   const STORAGE_KEY = "youhou.stopPush.task.v1";
   const RESUME_KEY = "youhou.stopPush.resume.v1";
+  const CSV_KEY = "youhou.stopPush.csv.v1";
   const STATE = {
     task: null,
     logs: [],
@@ -588,10 +589,14 @@
       alert("没有命中账户，不能执行。");
       return;
     }
-    const csvFile = document.querySelector("#youhou-csv-file").files[0];
+    let csvFile = document.querySelector("#youhou-csv-file").files[0];
     if (!task.options?.dryRun && !csvFile) {
       alert("正式执行前请选择本次要上传的 CSV 文件。");
       return;
+    }
+    if (!task.options?.dryRun) {
+      await saveCsvFile(csvFile);
+      csvFile = await loadCsvFile();
     }
     const dryRun = task.options?.dryRun !== false;
     if (task.options?.needConfirm !== false) {
@@ -635,6 +640,7 @@
   function stopTask() {
     STATE.running = false;
     clearResumeState();
+    clearCsvCache();
     log("warn", "收到停止指令，当前步骤结束后停止");
   }
 
@@ -685,6 +691,7 @@
       }
       log("info", "搜索目标处理完成", { searchText: account.searchText });
       clearResumeState();
+      clearCsvCache();
       return { ok: true };
     } catch (error) {
       log("error", "搜索目标处理失败", { searchText: account.searchText, error: error.message });
@@ -736,7 +743,7 @@
       dryRun: resume.task?.options?.dryRun !== false,
     });
     if (isAccountProjectPage()) {
-      alert("已进入账户页面。请确认页面加载完成；如正式执行，请重新选择 CSV，然后点击停推助手里的「继续」。");
+      alert("已进入账户页面。请确认页面加载完成，然后点击停推助手里的「继续」。正式执行会自动使用已缓存的 CSV。");
     }
   }
 
@@ -752,10 +759,14 @@
     }
     const task = resume.task;
     const dryRun = task.options?.dryRun !== false;
-    const csvFile = document.querySelector("#youhou-csv-file").files[0];
+    let csvFile = document.querySelector("#youhou-csv-file").files[0] || (await loadCsvFile());
     if (!dryRun && !csvFile) {
-      alert("正式执行续跑前，请重新选择本次要上传的 CSV 文件。");
+      alert("未找到本次 CSV 缓存，请重新选择 CSV 后继续。");
       return;
+    }
+    if (!dryRun && document.querySelector("#youhou-csv-file").files[0]) {
+      await saveCsvFile(document.querySelector("#youhou-csv-file").files[0]);
+      csvFile = await loadCsvFile();
     }
     STATE.running = true;
     setRunButtons(false);
@@ -771,6 +782,7 @@
         await runPackage(task, resume.account, task.target.packageNames[index], csvFile);
       }
       clearResumeState();
+      clearCsvCache();
       log("info", "跨页面续跑完成");
     } catch (error) {
       log("error", "跨页面续跑失败", { error: error.message });
@@ -792,6 +804,65 @@
 
   function isAccountProjectPage() {
     return location.href.includes("localads.chengzijianzhan.cn/lamp/pc/cdp_promotion/promote-manage/project");
+  }
+
+  async function saveCsvFile(file) {
+    const dataUrl = await readFileAsDataUrl(file);
+    storageSet(
+      CSV_KEY,
+      JSON.stringify({
+        name: file.name,
+        type: file.type || "text/csv",
+        lastModified: file.lastModified || Date.now(),
+        dataUrl,
+        savedAt: Date.now(),
+      })
+    );
+    log("info", "已缓存 CSV 文件用于跨页面续跑", { name: file.name, size: file.size });
+  }
+
+  function clearCsvCache() {
+    storageRemove(CSV_KEY);
+  }
+
+  async function loadCsvFile() {
+    const raw = storageGet(CSV_KEY);
+    if (!raw) return null;
+    try {
+      const saved = JSON.parse(raw);
+      const blob = dataUrlToBlob(saved.dataUrl);
+      const file = new File([blob], saved.name, {
+        type: saved.type || blob.type || "text/csv",
+        lastModified: saved.lastModified || Date.now(),
+      });
+      log("info", "已从缓存恢复 CSV 文件", { name: file.name, size: file.size });
+      return file;
+    } catch (error) {
+      log("error", "CSV 缓存恢复失败", { error: error.message });
+      storageRemove(CSV_KEY);
+      return null;
+    }
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error("FILE_READ_FAILED"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const [meta, base64] = dataUrl.split(",");
+    const mimeMatch = meta.match(/data:(.*?);base64/);
+    const mime = mimeMatch?.[1] || "text/csv";
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: mime });
   }
 
   async function runPackage(task, account, packageName, csvFile) {
