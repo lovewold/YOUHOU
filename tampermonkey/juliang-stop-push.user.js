@@ -41,8 +41,8 @@
   };
 
   const TEXT = {
-    tools: ["工具"],
-    targetPackage: ["定向包"],
+    tools: ["工具", "工具箱", "资产工具"],
+    targetPackage: ["定向包", "定向包管理"],
     edit: ["修改", "编辑"],
     userTargeting: ["用户定向"],
     region: ["行政区域"],
@@ -697,8 +697,29 @@
   }
 
   async function enterAccountNode(accountNode) {
-    clickElement(accountNode);
-    await sleep(1800);
+    const clickable = findBestClickable(accountNode);
+    log("info", "准备进入账户候选", {
+      text: normalizeText(accountNode.textContent).slice(0, 80),
+      clickText: normalizeText(clickable.textContent || clickable.getAttribute("title") || clickable.getAttribute("aria-label")).slice(0, 80),
+    });
+    clickElement(clickable);
+    await sleep(2400);
+  }
+
+  function findBestClickable(root) {
+    const clickableSelectors = [
+      'a[href]',
+      'button',
+      '[role="button"]',
+      '[data-e2e*="account"]',
+      '[class*="account"]',
+    ];
+    for (const selector of clickableSelectors) {
+      const nodes = Array.from(root.querySelectorAll?.(selector) || []);
+      const visibleNode = nodes.find((node) => isVisible(node) && normalizeText(node.textContent || node.getAttribute("title") || node.getAttribute("aria-label")));
+      if (visibleNode) return visibleNode;
+    }
+    return root;
   }
 
   function uniqueElements(elements) {
@@ -749,9 +770,9 @@
       log("info", "dryRun 跳过进入工具定向包页面");
       return;
     }
-    await clickText(TEXT.tools, "TOOLS_NOT_FOUND");
+    await clickText(TEXT.tools, "TOOLS_NOT_FOUND", document.body, { logVisibleTextOnFail: true });
     await sleep(500);
-    await clickText(TEXT.targetPackage, "TARGET_PACKAGE_MENU_NOT_FOUND");
+    await clickText(TEXT.targetPackage, "TARGET_PACKAGE_MENU_NOT_FOUND", document.body, { logVisibleTextOnFail: true });
     await sleep(1200);
     log("info", "已进入定向包页面");
   }
@@ -803,9 +824,19 @@
     log("info", "检测到保存成功提示");
   }
 
-  async function clickText(texts, errorCode) {
-    const node = findElementByText(texts);
-    if (!node) throw new Error(errorCode);
+  async function clickText(texts, errorCode, root = document.body, options = {}) {
+    const node = findElementByText(texts, root);
+    if (!node) {
+      if (options.logVisibleTextOnFail) {
+        log("warn", "未找到目标文本，当前可见导航文本", {
+          errorCode,
+          expected: texts,
+          visibleTexts: collectVisibleTexts().slice(0, 80),
+          url: location.href,
+        });
+      }
+      throw new Error(errorCode);
+    }
     clickElement(node);
   }
 
@@ -818,10 +849,38 @@
   }
 
   function findElementByText(texts, root = document.body) {
-    const candidates = Array.from(root.querySelectorAll("button, a, span, div, td, th, p, label"));
-    const exact = candidates.find((node) => isVisible(node) && texts.some((text) => normalizeText(node.textContent) === normalizeText(text)));
+    const candidates = Array.from(root.querySelectorAll('button, a, span, div, td, th, p, label, li, [role="menuitem"], [role="tab"], [title], [aria-label]'));
+    const exact = candidates.find((node) => isVisible(node) && texts.some((text) => getSearchableText(node).some((value) => normalizeText(value) === normalizeText(text))));
     if (exact) return exact;
-    return candidates.find((node) => isVisible(node) && texts.some((text) => normalizeText(node.textContent).includes(normalizeText(text))));
+    return candidates.find((node) => isVisible(node) && texts.some((text) => getSearchableText(node).some((value) => normalizeText(value).includes(normalizeText(text)))));
+  }
+
+  function getSearchableText(node) {
+    return [
+      node.textContent,
+      node.getAttribute?.("title"),
+      node.getAttribute?.("aria-label"),
+      node.getAttribute?.("data-e2e"),
+    ].filter(Boolean);
+  }
+
+  function collectVisibleTexts() {
+    return uniqueStrings(
+      Array.from(document.querySelectorAll('nav, aside, header, button, a, li, [role="menuitem"], [role="tab"], [title], [aria-label]'))
+        .filter(isVisible)
+        .flatMap(getSearchableText)
+        .map(normalizeText)
+        .filter((text) => text.length >= 2 && text.length <= 40)
+    );
+  }
+
+  function uniqueStrings(values) {
+    const seen = new Set();
+    return values.filter((value) => {
+      if (seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
   }
 
   function normalizeText(value) {
