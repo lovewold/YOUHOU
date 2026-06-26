@@ -31,6 +31,15 @@
   };
 
   const SELECTORS = {
+    accountName: [
+      ".oc-typography-value-int",
+      '[elementtiming="element-timing"]',
+    ],
+    toolsMenu: [
+      "#firstTitle_tools",
+      '[data-e2e$="navigatormenu_tools"]',
+      '[data-e2e*="navigatormenu_tools"]',
+    ],
     accountSearchInput: [
       'input[placeholder*="搜索"]',
       'input[placeholder*="账户"]',
@@ -943,6 +952,15 @@
 
   function findAccountNameNode(root, searchText) {
     const normalizedSearchText = normalizeText(searchText);
+    const stableNodes = SELECTORS.accountName.flatMap((selector) => Array.from(root.querySelectorAll?.(selector) || []));
+    const stableMatch = stableNodes
+      .filter((node) => {
+        const text = normalizeText(node.textContent);
+        return isVisible(node) && text.includes(normalizedSearchText) && !isOperationText(text);
+      })
+      .sort((left, right) => normalizeText(left.textContent).length - normalizeText(right.textContent).length)[0];
+    if (stableMatch) return stableMatch;
+
     const nodes = Array.from(root.querySelectorAll?.("a, span, div, td, p") || []);
     const matched = nodes
       .filter((node) => {
@@ -1018,15 +1036,32 @@
       return;
     }
     await waitForPageReady();
-    const toolNode = await waitForElementByText(TEXT.tools, 12000, getNavigationRoot());
+    const toolNode = await waitForToolsMenu();
     log("info", "已找到顶部工具入口", {
       text: normalizeText(toolNode.textContent || toolNode.getAttribute("title") || toolNode.getAttribute("aria-label")),
     });
-    clickElement(findClickableAncestor(toolNode));
+    clickElement(toolNode);
     await sleep(900);
     await clickText(TEXT.targetPackage, "TARGET_PACKAGE_MENU_NOT_FOUND", document.body, { logVisibleTextOnFail: true });
     await sleep(1200);
     log("info", "已进入定向包页面");
+  }
+
+  async function waitForToolsMenu() {
+    const start = Date.now();
+    while (Date.now() - start < 12000) {
+      const stableNode = findFirstSelector(SELECTORS.toolsMenu);
+      if (stableNode) return stableNode;
+      const textNode = findElementByText(TEXT.tools, getNavigationRoot());
+      if (textNode) return findClickableAncestor(textNode);
+      await sleep(300);
+    }
+    log("warn", "等待工具菜单超时", {
+      selectors: SELECTORS.toolsMenu,
+      visibleTexts: collectVisibleTexts().slice(0, 80),
+      url: location.href,
+    });
+    throw new Error("TOOLS_NOT_FOUND");
   }
 
   async function findAndOpenPackage(packageName, dryRun) {
