@@ -13,46 +13,24 @@
 
 ## 2. 配置任务
 
-在油猴面板中编辑任务 JSON，例如：
-
-```json
-{
-  "taskName": "2026-06-26_家电停推",
-  "mode": "businessLine",
-  "filters": {
-    "businessLine": "家电",
-    "agent": ["红马"]
-  },
-  "target": {
-    "packageNames": ["空调停推包", "电视停推包"],
-    "regionCsvPath": "C:/stop-push/csv/current-stop-push.csv"
-  },
-  "options": {
-    "dryRun": true,
-    "needConfirm": true,
-    "retryTimes": 1,
-    "takeScreenshotOnFail": false,
-    "stopOnContinuousFailures": 5
-  }
-}
-```
-
-重点只需要改：
+在油猴面板中填写字段即可，不需要编辑 JSON。
 
 | 字段 | 要填什么 |
 | --- | --- |
-| taskName | 本次任务名称 |
-| filters.businessLine | 本次要停推的业务线 |
-| filters.agent | 当前浏览器对应的代理商 |
-| target.packageNames | 本次要修改的一个或多个定向包名称 |
-| target.regionCsvPath | 本次要上传的 CSV 文件路径 |
-| options.dryRun | 首次试跑用 `true`，确认无误后改 `false` |
+| 任务名称 | 本次任务名称 |
+| 执行模式 | 一般选择「按业务线筛选」 |
+| 业务线 | 本次要停推的业务线 |
+| 代理商 | 当前浏览器对应的代理商 |
+| 定向包名称 | 本次要修改的一个或多个定向包名称，一行一个 |
+| 账户备注 | 一行一个账户备注 |
+| CSV 文件 | 正式执行前选择本次要上传的 CSV |
+| dryRun | 首次试跑勾选，确认无误后取消勾选 |
 
 ## 3. 执行顺序
 
 | 步骤 | 操作 | 预期结果 |
 | --- | --- | --- |
-| 1 | 在当前代理商浏览器中打开油猴面板 | 面板读取任务 JSON |
+| 1 | 在当前代理商浏览器中打开油猴面板 | 面板读取上次保存的表单 |
 | 2 | 点击任务预览 | 显示命中账户、定向包列表、CSV 文件 |
 | 3 | 核对命中账户 | 确认没有多选或漏选 |
 | 4 | dryRun 试跑 | 验证账户定位和任务范围，不提交保存 |
@@ -71,7 +49,7 @@
 2. 进入账户。
 3. 关闭活动弹窗。
 4. 进入「工具 > 定向包」。
-5. 按 `packageNames` 中的第一个名称查找定向包。
+5. 按面板中填写的第一个定向包名称查找定向包。
 6. 修改行政区域并上传本次 CSV。
 7. 保存并等待成功提示。
 8. 继续处理下一个定向包名称。

@@ -14,8 +14,8 @@
 
 1. 打开当前代理商浏览器，并确认已登录巨量引擎。
 2. 进入巨量本地推升级版工作台。
-3. 在面板中编辑任务 JSON。
-4. 填写当前代理商、业务线、定向包名称列表和本次 CSV。
+3. 在面板中填写任务名称、代理商、业务线、定向包名称和账户备注。
+4. 选择本次要上传的 CSV 文件。
 5. 保持 `dryRun: true`，点击「预览」。
 6. 确认命中账户和定向包正确后，点击「执行」进行 dryRun。
 7. dryRun 日志无误后，将 `dryRun` 改为 `false`。
@@ -23,38 +23,18 @@
 9. 再次点击「执行」正式处理。
 10. 执行结束后复制或下载日志。
 
-## 3. 任务 JSON 示例
+## 3. 面板字段
 
-```json
-{
-  "taskName": "2026-06-26_家电停推",
-  "mode": "businessLine",
-  "filters": {
-    "businessLine": "家电",
-    "agent": ["红马"],
-    "accountRemarks": []
-  },
-  "target": {
-    "packageNames": ["空调停推包", "电视停推包"],
-    "regionCsvPath": "C:/stop-push/csv/current-stop-push.csv"
-  },
-  "accounts": [
-    {
-      "accountRemark": "周涛+同城电器维修服务预约店+红马+家电",
-      "agent": "红马",
-      "businessLine": "家电",
-      "enabled": true
-    }
-  ],
-  "options": {
-    "dryRun": true,
-    "needConfirm": true,
-    "retryTimes": 1,
-    "takeScreenshotOnFail": false,
-    "stopOnContinuousFailures": 5
-  }
-}
-```
+| 字段 | 填写方式 |
+| --- | --- |
+| 任务名称 | 例如 `家电停推` |
+| 执行模式 | 一般选择「按业务线筛选」 |
+| 代理商 | 当前浏览器对应代理商，例如 `红马` |
+| 业务线 | 例如 `家电` |
+| 定向包名称 | 一行一个，例如 `空调停推包`、`电视停推包` |
+| 账户备注 | 一行一个账户备注，格式仍为 `负责人+店铺名称+代理商+业务线` |
+| dryRun | 首次试跑保持勾选，正式执行前取消勾选 |
+| CSV 文件 | 正式执行前选择本次要上传的定向包 CSV |
 
 ## 4. 选择器校准
 

@@ -93,7 +93,8 @@
         color: #646a73;
       }
       .youhou-field textarea,
-      .youhou-field input {
+      .youhou-field input,
+      .youhou-field select {
         width: 100%;
         border: 1px solid #d0d3d8;
         border-radius: 6px;
@@ -102,9 +103,25 @@
         line-height: 1.5;
       }
       .youhou-field textarea {
-        height: 132px;
+        height: 88px;
         resize: vertical;
         font-family: Consolas, "SFMono-Regular", monospace;
+      }
+      .youhou-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .youhou-check {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #1f2329;
+        margin: 2px 0 10px;
+      }
+      .youhou-check input {
+        width: auto;
       }
       .youhou-row {
         display: flex;
@@ -246,9 +263,8 @@
   }
 
   function parseTaskInput() {
-    const textarea = document.querySelector("#youhou-task-json");
     try {
-      const task = JSON.parse(textarea.value);
+      const task = buildTaskFromPanel();
       const errors = validateTask(task);
       if (errors.length) {
         throw new Error(errors.join("; "));
@@ -267,15 +283,95 @@
 
   function validateTask(task) {
     const errors = [];
-    if (!task || typeof task !== "object") errors.push("任务必须是 JSON 对象");
+    if (!task || typeof task !== "object") errors.push("任务不能为空");
     if (!task.taskName) errors.push("缺少 taskName");
     if (!["businessLine", "accountList"].includes(task.mode)) errors.push("mode 仅支持 businessLine 或 accountList");
-    if (!Array.isArray(task.accounts)) errors.push("缺少 accounts 数组");
+    if (!Array.isArray(task.accounts) || task.accounts.length === 0) errors.push("请至少填写一个账户备注");
     if (!task.target || !Array.isArray(task.target.packageNames) || task.target.packageNames.length === 0) errors.push("target.packageNames 至少填写一个");
-    if (!task.target || typeof task.target.regionCsvPath !== "string") errors.push("缺少 target.regionCsvPath");
     if (task.mode === "businessLine" && !task.filters?.businessLine) errors.push("businessLine 模式缺少 filters.businessLine");
     if (task.mode === "accountList" && !Array.isArray(task.filters?.accountRemarks)) errors.push("accountList 模式缺少 filters.accountRemarks");
     return errors;
+  }
+
+  function buildTaskFromPanel() {
+    const agent = getInputValue("#youhou-agent");
+    const businessLine = getInputValue("#youhou-business-line");
+    const accountRemarks = splitText(getInputValue("#youhou-account-remarks"));
+    const packageNames = splitText(getInputValue("#youhou-package-names"));
+    const csvFile = document.querySelector("#youhou-csv-file")?.files?.[0];
+    const taskName = getInputValue("#youhou-task-name") || `${businessLine || "停推"}任务`;
+    const mode = document.querySelector("#youhou-mode")?.value || "businessLine";
+    const accounts = accountRemarks.map((accountRemark) => {
+      const parsed = parseAccountRemark(accountRemark);
+      return {
+        accountRemark,
+        agent: parsed.agent || agent,
+        businessLine: parsed.businessLine || businessLine,
+        enabled: true,
+      };
+    });
+
+    return {
+      taskName,
+      mode,
+      filters: {
+        businessLine,
+        agent: agent ? [agent] : [],
+        accountRemarks,
+      },
+      target: {
+        packageNames,
+        regionCsvPath: csvFile?.name || "",
+      },
+      accounts,
+      options: {
+        dryRun: document.querySelector("#youhou-dry-run")?.checked !== false,
+        needConfirm: true,
+        retryTimes: Number(getInputValue("#youhou-retry-times") || 1),
+        stopOnContinuousFailures: Number(getInputValue("#youhou-max-failures") || 5),
+      },
+    };
+  }
+
+  function fillPanelFromTask(task) {
+    const accounts = Array.isArray(task.accounts) ? task.accounts : [];
+    const accountRemarks = accounts.map((account) => account.accountRemark).filter(Boolean).join("\n");
+    setInputValue("#youhou-task-name", task.taskName || "");
+    setInputValue("#youhou-mode", task.mode || "businessLine");
+    setInputValue("#youhou-agent", task.filters?.agent?.[0] || accounts[0]?.agent || "");
+    setInputValue("#youhou-business-line", task.filters?.businessLine || accounts[0]?.businessLine || "");
+    setInputValue("#youhou-package-names", (task.target?.packageNames || []).join("\n"));
+    setInputValue("#youhou-account-remarks", accountRemarks);
+    setInputValue("#youhou-retry-times", String(task.options?.retryTimes ?? 1));
+    setInputValue("#youhou-max-failures", String(task.options?.stopOnContinuousFailures ?? 5));
+    const dryRun = document.querySelector("#youhou-dry-run");
+    if (dryRun) dryRun.checked = task.options?.dryRun !== false;
+  }
+
+  function getInputValue(selector) {
+    return document.querySelector(selector)?.value?.trim() || "";
+  }
+
+  function setInputValue(selector, value) {
+    const node = document.querySelector(selector);
+    if (node) node.value = value;
+  }
+
+  function splitText(value) {
+    return value
+      .split(/[\n,，]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function parseAccountRemark(accountRemark) {
+    const parts = accountRemark.split("+").map((part) => part.trim());
+    return {
+      owner: parts[0] || "",
+      storeName: parts[1] || "",
+      agent: parts[2] || "",
+      businessLine: parts[3] || "",
+    };
   }
 
   function getMatchedAccounts(task) {
@@ -329,12 +425,53 @@
         <button class="youhou-btn" id="youhou-hide">收起</button>
       </div>
       <div class="youhou-body">
+        <div class="youhou-grid">
+          <div class="youhou-field">
+            <label>任务名称</label>
+            <input id="youhou-task-name" placeholder="例如：家电停推" />
+          </div>
+          <div class="youhou-field">
+            <label>执行模式</label>
+            <select id="youhou-mode">
+              <option value="businessLine">按业务线筛选</option>
+              <option value="accountList">按账户备注执行</option>
+            </select>
+          </div>
+        </div>
+        <div class="youhou-grid">
+          <div class="youhou-field">
+            <label>代理商</label>
+            <input id="youhou-agent" placeholder="例如：红马" />
+          </div>
+          <div class="youhou-field">
+            <label>业务线</label>
+            <input id="youhou-business-line" placeholder="例如：家电" />
+          </div>
+        </div>
         <div class="youhou-field">
-          <label>任务 JSON</label>
-          <textarea id="youhou-task-json">${escapeHtml(JSON.stringify(task, null, 2))}</textarea>
+          <label>定向包名称</label>
+          <textarea id="youhou-package-names" placeholder="一行一个，例如：&#10;空调停推包&#10;电视停推包"></textarea>
+        </div>
+        <div class="youhou-field">
+          <label>账户备注</label>
+          <textarea id="youhou-account-remarks" placeholder="一行一个账户备注，例如：&#10;周涛+同城电器维修服务预约店+红马+家电"></textarea>
+        </div>
+        <label class="youhou-check">
+          <input type="checkbox" id="youhou-dry-run" />
+          <span>dryRun 试跑，不上传 CSV，不保存</span>
+        </label>
+        <div class="youhou-grid">
+          <div class="youhou-field">
+            <label>失败重试</label>
+            <input id="youhou-retry-times" type="number" min="0" max="5" />
+          </div>
+          <div class="youhou-field">
+            <label>连续失败暂停</label>
+            <input id="youhou-max-failures" type="number" min="1" max="20" />
+          </div>
         </div>
         <div class="youhou-row">
-          <button class="youhou-btn" id="youhou-load">加载配置</button>
+          <button class="youhou-btn" id="youhou-load">保存配置</button>
           <button class="youhou-btn" id="youhou-preview">预览</button>
           <button class="youhou-btn primary" id="youhou-run">执行</button>
           <button class="youhou-btn danger" id="youhou-stop">停止</button>
@@ -374,6 +511,7 @@
     document.querySelector("#youhou-copy-log").addEventListener("click", copyLogs);
     document.querySelector("#youhou-download-log").addEventListener("click", downloadLogs);
     document.querySelector("#youhou-clear-log").addEventListener("click", clearLogs);
+    fillPanelFromTask(task);
     renderSummary();
     log("info", "停推助手已加载");
   }
