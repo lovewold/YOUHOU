@@ -7,8 +7,12 @@
 // @match        https://*.oceanengine.com/*
 // @match        https://*.jinritemai.com/*
 // @match        https://*.bytedance.com/*
+// @match        https://localads.chengzijianzhan.cn/*
 // @grant        GM_addStyle
 // @grant        GM_setClipboard
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -16,11 +20,13 @@
   "use strict";
 
   const STORAGE_KEY = "youhou.stopPush.task.v1";
+  const RESUME_KEY = "youhou.stopPush.resume.v1";
   const STATE = {
     task: null,
     logs: [],
     running: false,
     panelOpen: true,
+    resume: null,
   };
 
   const SELECTORS = {
@@ -228,7 +234,7 @@
   }
 
   function loadTask() {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = storageGet(STORAGE_KEY);
     if (!raw) return defaultTask();
     try {
       return JSON.parse(raw);
@@ -239,7 +245,33 @@
   }
 
   function saveTask(task) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(task, null, 2));
+    storageSet(STORAGE_KEY, JSON.stringify(task, null, 2));
+  }
+
+  function storageGet(key) {
+    try {
+      const gmValue = GM_getValue(key, null);
+      if (gmValue !== null && gmValue !== undefined) return gmValue;
+    } catch (error) {
+      // Fallback for environments where GM storage is unavailable.
+    }
+    return localStorage.getItem(key);
+  }
+
+  function storageSet(key, value) {
+    try {
+      GM_setValue(key, value);
+    } catch (error) {
+      localStorage.setItem(key, value);
+    }
+  }
+
+  function storageRemove(key) {
+    try {
+      GM_deleteValue(key);
+    } catch (error) {
+      localStorage.removeItem(key);
+    }
   }
 
   function nowIso() {
@@ -485,6 +517,7 @@
         <div class="youhou-row">
           <button class="youhou-btn" id="youhou-load">保存配置</button>
           <button class="youhou-btn" id="youhou-preview">预览</button>
+          <button class="youhou-btn" id="youhou-resume">继续</button>
           <button class="youhou-btn primary" id="youhou-run">执行</button>
           <button class="youhou-btn danger" id="youhou-stop">停止</button>
         </div>
@@ -518,6 +551,7 @@
     });
     document.querySelector("#youhou-load").addEventListener("click", parseTaskInput);
     document.querySelector("#youhou-preview").addEventListener("click", previewTask);
+    document.querySelector("#youhou-resume").addEventListener("click", resumeTask);
     document.querySelector("#youhou-run").addEventListener("click", runTask);
     document.querySelector("#youhou-stop").addEventListener("click", stopTask);
     document.querySelector("#youhou-copy-log").addEventListener("click", copyLogs);
@@ -526,6 +560,7 @@
     fillPanelFromTask(task);
     renderSummary();
     log("info", "停推助手已加载");
+    maybePrepareResume();
   }
 
   function previewTask() {
@@ -566,7 +601,7 @@
 
     STATE.running = true;
     let continuousFailures = 0;
-      log("info", "任务开始", { taskName: task.taskName, dryRun, mode: task.mode });
+    log("info", "任务开始", { taskName: task.taskName, dryRun, mode: task.mode });
     setRunButtons(false);
 
     try {
@@ -599,6 +634,7 @@
 
   function stopTask() {
     STATE.running = false;
+    clearResumeState();
     log("warn", "收到停止指令，当前步骤结束后停止");
   }
 
@@ -632,7 +668,14 @@
 
       for (const accountNode of accountNodes) {
         if (!STATE.running) break;
+        const resumeId = saveResumeState({
+          task,
+          account,
+          packageIndex: 0,
+          phase: "entered-account",
+        });
         await enterAccountNode(accountNode, account.searchText);
+        await waitForAccountPageNavigation(resumeId);
         await closePopupIfPresent();
         await openTargetPackagePage(false);
         for (const packageName of task.target.packageNames) {
@@ -641,11 +684,114 @@
         }
       }
       log("info", "搜索目标处理完成", { searchText: account.searchText });
+      clearResumeState();
       return { ok: true };
     } catch (error) {
       log("error", "搜索目标处理失败", { searchText: account.searchText, error: error.message });
       return { ok: false, error };
     }
+  }
+
+  function saveResumeState(resume) {
+    const resumeState = {
+      ...resume,
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      createdAt: Date.now(),
+      url: location.href,
+    };
+    storageSet(RESUME_KEY, JSON.stringify(resumeState));
+    STATE.resume = resumeState;
+    log("info", "已保存跨页面续跑状态", { id: resumeState.id, phase: resumeState.phase });
+    return resumeState.id;
+  }
+
+  function loadResumeState() {
+    const raw = storageGet(RESUME_KEY);
+    if (!raw) return null;
+    try {
+      const resume = JSON.parse(raw);
+      if (Date.now() - resume.createdAt > 30 * 60 * 1000) {
+        clearResumeState();
+        return null;
+      }
+      return resume;
+    } catch (error) {
+      clearResumeState();
+      return null;
+    }
+  }
+
+  function clearResumeState() {
+    storageRemove(RESUME_KEY);
+    STATE.resume = null;
+  }
+
+  function maybePrepareResume() {
+    const resume = loadResumeState();
+    if (!resume) return;
+    STATE.resume = resume;
+    log("warn", "检测到未完成的跨页面任务", {
+      searchText: resume.account?.searchText,
+      packageNames: resume.task?.target?.packageNames,
+      dryRun: resume.task?.options?.dryRun !== false,
+    });
+    if (isAccountProjectPage()) {
+      alert("已进入账户页面。请确认页面加载完成；如正式执行，请重新选择 CSV，然后点击停推助手里的「继续」。");
+    }
+  }
+
+  async function resumeTask() {
+    const resume = loadResumeState();
+    if (!resume) {
+      alert("没有可继续的任务。");
+      return;
+    }
+    if (!isAccountProjectPage()) {
+      alert("当前不是账户项目页，无法继续。");
+      return;
+    }
+    const task = resume.task;
+    const dryRun = task.options?.dryRun !== false;
+    const csvFile = document.querySelector("#youhou-csv-file").files[0];
+    if (!dryRun && !csvFile) {
+      alert("正式执行续跑前，请重新选择本次要上传的 CSV 文件。");
+      return;
+    }
+    STATE.running = true;
+    setRunButtons(false);
+    try {
+      log("info", "开始跨页面续跑", {
+        searchText: resume.account?.searchText,
+        packageIndex: resume.packageIndex || 0,
+      });
+      await closePopupIfPresent();
+      await openTargetPackagePage(false);
+      for (let index = resume.packageIndex || 0; index < task.target.packageNames.length; index += 1) {
+        if (!STATE.running) break;
+        await runPackage(task, resume.account, task.target.packageNames[index], csvFile);
+      }
+      clearResumeState();
+      log("info", "跨页面续跑完成");
+    } catch (error) {
+      log("error", "跨页面续跑失败", { error: error.message });
+    } finally {
+      STATE.running = false;
+      setRunButtons(true);
+    }
+  }
+
+  async function waitForAccountPageNavigation(resumeId) {
+    const startUrl = location.href;
+    await sleep(1200);
+    if (location.href !== startUrl || isAccountProjectPage()) {
+      log("info", "检测到账户页面跳转", { resumeId, url: location.href });
+      return;
+    }
+    log("warn", "未检测到账户页面跳转，若页面稍后跳转将由续跑状态恢复", { resumeId });
+  }
+
+  function isAccountProjectPage() {
+    return location.href.includes("localads.chengzijianzhan.cn/lamp/pc/cdp_promotion/promote-manage/project");
   }
 
   async function runPackage(task, account, packageName, csvFile) {
