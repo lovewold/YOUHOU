@@ -1,0 +1,26 @@
+[
+  {
+    "accountId": "acct_001",
+    "accountRemark": "周涛+同城电器维修服务预约店+红马+家电",
+    "owner": "周涛",
+    "storeName": "同城电器维修服务预约店",
+    "agent": "红马",
+    "browserType": "chrome_redma",
+    "businessLine": "家电",
+    "category": "空调",
+    "packageNames": ["空调停推包", "电视停推包"],
+    "enabled": true
+  },
+  {
+    "accountId": "acct_002",
+    "accountRemark": "张三+XX家电维修店+蓝象+保洁",
+    "owner": "张三",
+    "storeName": "XX家电维修店",
+    "agent": "蓝象",
+    "browserType": "chrome_lanxiang",
+    "businessLine": "保洁",
+    "category": "日常保洁",
+    "packageNames": ["保洁停推包"],
+    "enabled": true
+  }
+]

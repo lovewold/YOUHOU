@@ -1,0 +1,34 @@
+{
+  "taskName": "2026-06-26_家电停推",
+  "mode": "businessLine",
+  "filters": {
+    "businessLine": "家电",
+    "agent": ["红马"],
+    "accountRemarks": []
+  },
+  "target": {
+    "packageNames": ["空调停推包", "电视停推包"],
+    "regionCsvPath": "C:/stop-push/csv/current-stop-push.csv"
+  },
+  "accounts": [
+    {
+      "accountRemark": "周涛+同城电器维修服务预约店+红马+家电",
+      "agent": "红马",
+      "businessLine": "家电",
+      "enabled": true
+    },
+    {
+      "accountRemark": "李四+YY维修店+红马+家电",
+      "agent": "红马",
+      "businessLine": "家电",
+      "enabled": true
+    }
+  ],
+  "options": {
+    "dryRun": true,
+    "needConfirm": true,
+    "retryTimes": 1,
+    "takeScreenshotOnFail": false,
+    "stopOnContinuousFailures": 5
+  }
+}

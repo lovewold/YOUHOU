@@ -1,0 +1,19 @@
+{
+  "taskName": "2026-06-26_家电停推",
+  "mode": "businessLine",
+  "filters": {
+    "businessLine": "家电",
+    "agent": ["红马"]
+  },
+  "target": {
+    "packageNames": ["空调停推包", "电视停推包"],
+    "regionCsvPath": "C:/stop-push/csv/current-stop-push.csv"
+  },
+  "options": {
+    "dryRun": true,
+    "needConfirm": true,
+    "retryTimes": 1,
+    "takeScreenshotOnFail": false,
+    "stopOnContinuousFailures": 5
+  }
+}
