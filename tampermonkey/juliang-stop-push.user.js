@@ -722,6 +722,17 @@
     return root;
   }
 
+  function findClickableAncestor(node) {
+    return (
+      node.closest?.("button") ||
+      node.closest?.("a") ||
+      node.closest?.('[role="button"]') ||
+      node.closest?.('[aria-haspopup="true"]') ||
+      node.closest?.('[class*="menu"]') ||
+      node
+    );
+  }
+
   function uniqueElements(elements) {
     const seen = new Set();
     return elements.filter((element) => {
@@ -770,8 +781,13 @@
       log("info", "dryRun 跳过进入工具定向包页面");
       return;
     }
-    await clickText(TEXT.tools, "TOOLS_NOT_FOUND", document.body, { logVisibleTextOnFail: true });
-    await sleep(500);
+    await waitForPageReady();
+    const toolNode = await waitForElementByText(TEXT.tools, 12000, getNavigationRoot());
+    log("info", "已找到顶部工具入口", {
+      text: normalizeText(toolNode.textContent || toolNode.getAttribute("title") || toolNode.getAttribute("aria-label")),
+    });
+    clickElement(findClickableAncestor(toolNode));
+    await sleep(900);
     await clickText(TEXT.targetPackage, "TARGET_PACKAGE_MENU_NOT_FOUND", document.body, { logVisibleTextOnFail: true });
     await sleep(1200);
     log("info", "已进入定向包页面");
@@ -838,6 +854,39 @@
       throw new Error(errorCode);
     }
     clickElement(node);
+  }
+
+  async function waitForElementByText(texts, timeout = 10000, root = document.body) {
+    let lastVisibleTexts = [];
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const currentRoot = typeof root === "function" ? root() : root;
+      const node = findElementByText(texts, currentRoot || document.body);
+      if (node) return node;
+      lastVisibleTexts = collectVisibleTexts().slice(0, 80);
+      await sleep(300);
+    }
+    log("warn", "等待文本超时", {
+      expected: texts,
+      visibleTexts: lastVisibleTexts,
+      url: location.href,
+    });
+    throw new Error(`TEXT_NOT_FOUND: ${texts.join("|")}`);
+  }
+
+  async function waitForPageReady() {
+    await waitFor(() => document.readyState === "complete" || document.readyState === "interactive", 10000, "PAGE_NOT_READY");
+    await sleep(800);
+  }
+
+  function getNavigationRoot() {
+    return (
+      document.querySelector("header") ||
+      document.querySelector("nav") ||
+      document.querySelector('[class*="header"]') ||
+      document.querySelector('[class*="Header"]') ||
+      document.body
+    );
   }
 
   function findFirstSelector(selectors, root = document) {
