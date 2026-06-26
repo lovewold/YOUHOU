@@ -290,12 +290,6 @@
     if (!task.target || !Array.isArray(task.target.packageNames) || task.target.packageNames.length === 0) errors.push("target.packageNames 至少填写一个");
     if (task.mode === "businessLine" && !task.filters?.businessLine) errors.push("businessLine 模式缺少 filters.businessLine");
     if (task.mode === "accountList" && !Array.isArray(task.filters?.accountRemarks)) errors.push("accountList 模式缺少 filters.accountRemarks");
-    const invalidRemarks = (task.accounts || [])
-      .map((account) => account.accountRemark)
-      .filter((accountRemark) => !isValidAccountRemark(accountRemark));
-    if (invalidRemarks.length) {
-      errors.push(`账户备注格式不正确，请填写完整格式：负责人+店铺名称+代理商+业务线。错误项：${invalidRemarks.slice(0, 3).join("、")}`);
-    }
     return errors;
   }
 
@@ -378,11 +372,6 @@
       agent: parts[2] || "",
       businessLine: parts[3] || "",
     };
-  }
-
-  function isValidAccountRemark(accountRemark) {
-    const parts = String(accountRemark || "").split("+").map((part) => part.trim());
-    return parts.length >= 4 && parts.slice(0, 4).every(Boolean);
   }
 
   function getMatchedAccounts(task) {
@@ -539,7 +528,7 @@
     if (accounts.length === 0) {
       alert("没有命中账户，请检查业务线、代理商或账户备注。");
     } else {
-      alert(`命中 ${accounts.length} 个账户，定向包 ${task.target.packageNames.length} 个。\n\n请在日志中核对完整账户备注，确认后再执行。`);
+      alert(`命中 ${accounts.length} 个账户，定向包 ${task.target.packageNames.length} 个。\n\n请在日志中核对账户搜索词，确认后再执行。`);
     }
   }
 
@@ -668,7 +657,7 @@
     const accountNode = findElementByText([accountRemark]);
     if (!accountNode) throw new Error(`ACCOUNT_NOT_FOUND: ${accountRemark}`);
     if (dryRun) {
-      log("info", "dryRun 定位到完整账户备注，不点击进入", { accountRemark });
+      log("info", "dryRun 定位到账户搜索词，不点击进入", { accountRemark });
       return;
     }
     clickElement(accountNode);
