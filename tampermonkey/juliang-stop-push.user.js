@@ -632,7 +632,7 @@
 
       for (const accountNode of accountNodes) {
         if (!STATE.running) break;
-        await enterAccountNode(accountNode);
+        await enterAccountNode(accountNode, account.searchText);
         await closePopupIfPresent();
         await openTargetPackagePage(false);
         for (const packageName of task.target.packageNames) {
@@ -696,8 +696,8 @@
     return candidateRows.length ? candidateRows : textNodes;
   }
 
-  async function enterAccountNode(accountNode) {
-    const clickable = findBestClickable(accountNode);
+  async function enterAccountNode(accountNode, searchText) {
+    const clickable = findBestAccountClickable(accountNode, searchText);
     log("info", "准备进入账户候选", {
       text: normalizeText(accountNode.textContent).slice(0, 80),
       clickText: normalizeText(clickable.textContent || clickable.getAttribute("title") || clickable.getAttribute("aria-label")).slice(0, 80),
@@ -706,10 +706,12 @@
     await sleep(2400);
   }
 
-  function findBestClickable(root) {
+  function findBestAccountClickable(root, searchText) {
+    const accountNameNode = findAccountNameNode(root, searchText);
+    if (accountNameNode) return findClickableAncestor(accountNameNode);
+
     const clickableSelectors = [
       'a[href]',
-      'button',
       '[role="button"]',
       '[data-e2e*="account"]',
       '[class*="account"]',
@@ -722,11 +724,28 @@
     return root;
   }
 
+  function findAccountNameNode(root, searchText) {
+    const normalizedSearchText = normalizeText(searchText);
+    const nodes = Array.from(root.querySelectorAll?.("a, span, div, td, p") || []);
+    const matched = nodes
+      .filter((node) => {
+        const text = normalizeText(node.textContent);
+        return isVisible(node) && text.includes(normalizedSearchText) && !isOperationText(text);
+      })
+      .sort((left, right) => normalizeText(left.textContent).length - normalizeText(right.textContent).length);
+    return matched[0] || null;
+  }
+
+  function isOperationText(text) {
+    return ["查看", "操作", "更多", "编辑"].some((keyword) => text === keyword || text.includes(`${keyword}⌄`) || text.includes(`${keyword}∨`));
+  }
+
   function findClickableAncestor(node) {
     return (
       node.closest?.("button") ||
       node.closest?.("a") ||
       node.closest?.('[role="button"]') ||
+      node.closest?.("td") ||
       node.closest?.('[aria-haspopup="true"]') ||
       node.closest?.('[class*="menu"]') ||
       node
