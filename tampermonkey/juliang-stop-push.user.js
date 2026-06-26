@@ -204,7 +204,7 @@
       filters: {
         businessLine: "家电",
         agent: ["红马"],
-        accountRemarks: [],
+        remarkKeywords: [],
       },
       target: {
         packageNames: ["空调停推包", "电视停推包"],
@@ -286,29 +286,28 @@
     if (!task || typeof task !== "object") errors.push("任务不能为空");
     if (!task.taskName) errors.push("缺少 taskName");
     if (!["businessLine", "accountList"].includes(task.mode)) errors.push("mode 仅支持 businessLine 或 accountList");
-    if (!Array.isArray(task.accounts) || task.accounts.length === 0) errors.push("请至少填写一个账户备注");
     if (!task.target || !Array.isArray(task.target.packageNames) || task.target.packageNames.length === 0) errors.push("target.packageNames 至少填写一个");
     if (task.mode === "businessLine" && !task.filters?.businessLine) errors.push("businessLine 模式缺少 filters.businessLine");
-    if (task.mode === "accountList" && !Array.isArray(task.filters?.accountRemarks)) errors.push("accountList 模式缺少 filters.accountRemarks");
+    if (task.mode === "accountList" && (!Array.isArray(task.filters?.remarkKeywords) || task.filters.remarkKeywords.length === 0)) errors.push("按备注执行模式至少填写一个备注关键词");
     return errors;
   }
 
   function buildTaskFromPanel() {
     const agent = getInputValue("#youhou-agent");
     const businessLine = getInputValue("#youhou-business-line");
-    const accountRemarks = splitText(getInputValue("#youhou-account-remarks"));
+    const remarkKeywords = splitText(getInputValue("#youhou-account-remarks"));
     const packageNames = splitText(getInputValue("#youhou-package-names"));
     const csvFile = document.querySelector("#youhou-csv-file")?.files?.[0];
     const taskName = getInputValue("#youhou-task-name") || `${businessLine || "停推"}任务`;
     const mode = document.querySelector("#youhou-mode")?.value || "businessLine";
-    const accounts = accountRemarks.map((accountRemark) => {
-      const parsed = parseAccountRemark(accountRemark);
-      return {
-        accountRemark,
+    const accounts = remarkKeywords.map((remarkKeyword) => {
+      const parsed = parseAccountRemark(remarkKeyword);
+      return createSearchAccount({
+        searchText: remarkKeyword,
+        displayName: remarkKeyword,
         agent: parsed.agent || agent,
         businessLine: parsed.businessLine || businessLine,
-        enabled: true,
-      };
+      });
     });
 
     return {
@@ -317,7 +316,7 @@
       filters: {
         businessLine,
         agent: agent ? [agent] : [],
-        accountRemarks,
+        remarkKeywords,
       },
       target: {
         packageNames,
@@ -335,13 +334,13 @@
 
   function fillPanelFromTask(task) {
     const accounts = Array.isArray(task.accounts) ? task.accounts : [];
-    const accountRemarks = accounts.map((account) => account.accountRemark).filter(Boolean).join("\n");
+    const remarkKeywords = task.filters?.remarkKeywords || accounts.map((account) => account.searchText || account.accountRemark).filter(Boolean);
     setInputValue("#youhou-task-name", task.taskName || "");
     setInputValue("#youhou-mode", task.mode || "businessLine");
     setInputValue("#youhou-agent", task.filters?.agent?.[0] || accounts[0]?.agent || "");
     setInputValue("#youhou-business-line", task.filters?.businessLine || accounts[0]?.businessLine || "");
     setInputValue("#youhou-package-names", (task.target?.packageNames || []).join("\n"));
-    setInputValue("#youhou-account-remarks", accountRemarks);
+    setInputValue("#youhou-account-remarks", remarkKeywords.join("\n"));
     setInputValue("#youhou-retry-times", String(task.options?.retryTimes ?? 1));
     setInputValue("#youhou-max-failures", String(task.options?.stopOnContinuousFailures ?? 5));
     const dryRun = document.querySelector("#youhou-dry-run");
@@ -374,16 +373,29 @@
     };
   }
 
+  function createSearchAccount({ searchText, displayName, agent, businessLine }) {
+    return {
+      searchText,
+      displayName: displayName || searchText,
+      accountRemark: displayName || searchText,
+      agent,
+      businessLine,
+      enabled: true,
+    };
+  }
+
   function getMatchedAccounts(task) {
-    const enabledAccounts = task.accounts.filter((account) => account.enabled !== false);
     if (task.mode === "businessLine") {
-      return enabledAccounts.filter((account) => {
-        const agentMatched = !task.filters.agent?.length || task.filters.agent.includes(account.agent);
-        return account.businessLine === task.filters.businessLine && agentMatched;
-      });
+      return [
+        createSearchAccount({
+          searchText: task.filters.businessLine,
+          displayName: `业务线：${task.filters.businessLine}`,
+          agent: task.filters.agent?.[0] || "",
+          businessLine: task.filters.businessLine,
+        }),
+      ];
     }
-    const remarks = new Set(task.filters.accountRemarks || []);
-    return enabledAccounts.filter((account) => remarks.has(account.accountRemark));
+    return (task.accounts || []).filter((account) => account.enabled !== false);
   }
 
   function renderSummary() {
@@ -434,7 +446,7 @@
             <label>执行模式</label>
             <select id="youhou-mode">
               <option value="businessLine">按业务线筛选</option>
-              <option value="accountList">按账户备注执行</option>
+              <option value="accountList">按备注关键词执行</option>
             </select>
           </div>
         </div>
@@ -453,8 +465,8 @@
           <textarea id="youhou-package-names" placeholder="一行一个，例如：&#10;空调停推包&#10;电视停推包"></textarea>
         </div>
         <div class="youhou-field">
-          <label>账户备注</label>
-          <textarea id="youhou-account-remarks" placeholder="一行一个账户备注，例如：&#10;周涛+同城电器维修服务预约店+红马+家电"></textarea>
+          <label>备注关键词（可选）</label>
+          <textarea id="youhou-account-remarks" placeholder="可选，一行一个。按业务线执行时用于二次过滤，例如：&#10;周涛&#10;同城电器"></textarea>
         </div>
         <label class="youhou-check">
           <input type="checkbox" id="youhou-dry-run" />
@@ -523,12 +535,13 @@
     log("info", "任务预览", {
       matchedCount: accounts.length,
       packageNames: task.target.packageNames,
-      accounts: accounts.map((account) => account.accountRemark),
+      searchTargets: accounts.map((account) => account.searchText),
+      remarkKeywords: task.filters.remarkKeywords || [],
     });
     if (accounts.length === 0) {
-      alert("没有命中账户，请检查业务线、代理商或账户备注。");
+      alert("没有生成搜索目标，请检查业务线或备注关键词。");
     } else {
-      alert(`命中 ${accounts.length} 个账户，定向包 ${task.target.packageNames.length} 个。\n\n请在日志中核对账户搜索词，确认后再执行。`);
+      alert(`将按 ${accounts.length} 个搜索目标执行，定向包 ${task.target.packageNames.length} 个。\n\n业务线模式会先搜索业务线，再用备注关键词做二次过滤。`);
     }
   }
 
@@ -553,7 +566,7 @@
 
     STATE.running = true;
     let continuousFailures = 0;
-    log("info", "任务开始", { taskName: task.taskName, dryRun });
+      log("info", "任务开始", { taskName: task.taskName, dryRun, mode: task.mode });
     setRunButtons(false);
 
     try {
@@ -595,7 +608,7 @@
     for (let attempt = 0; attempt <= retryTimes; attempt += 1) {
       if (!STATE.running) return { ok: false };
       if (attempt > 0) {
-        log("warn", "重试账户", { accountRemark: account.accountRemark, attempt });
+        log("warn", "重试搜索目标", { searchText: account.searchText, attempt });
       }
       lastResult = await runAccount(task, account, csvFile);
       if (lastResult.ok) return lastResult;
@@ -604,35 +617,40 @@
   }
 
   async function runAccount(task, account, csvFile) {
-    log("info", "开始处理账户", { accountRemark: account.accountRemark });
+    log("info", "开始处理搜索目标", { searchText: account.searchText, displayName: account.displayName });
     try {
       const dryRun = task.options?.dryRun !== false;
-      await findAndEnterAccount(account.accountRemark, dryRun);
+      const accountNodes = await findAccountNodes(task, account, dryRun);
       if (dryRun) {
-        log("info", "dryRun 仅验证账户定位并记录计划处理定向包", {
-          accountRemark: account.accountRemark,
+        log("info", "dryRun 仅验证搜索和筛选结果，不点击进入", {
+          searchText: account.searchText,
+          matchedCount: accountNodes.length,
           packageNames: task.target.packageNames,
         });
         return { ok: true };
       }
-      await closePopupIfPresent();
-      await openTargetPackagePage(false);
 
-      for (const packageName of task.target.packageNames) {
+      for (const accountNode of accountNodes) {
         if (!STATE.running) break;
-        await runPackage(task, account, packageName, csvFile);
+        await enterAccountNode(accountNode);
+        await closePopupIfPresent();
+        await openTargetPackagePage(false);
+        for (const packageName of task.target.packageNames) {
+          if (!STATE.running) break;
+          await runPackage(task, account, packageName, csvFile);
+        }
       }
-      log("info", "账户处理完成", { accountRemark: account.accountRemark });
+      log("info", "搜索目标处理完成", { searchText: account.searchText });
       return { ok: true };
     } catch (error) {
-      log("error", "账户处理失败", { accountRemark: account.accountRemark, error: error.message });
+      log("error", "搜索目标处理失败", { searchText: account.searchText, error: error.message });
       return { ok: false, error };
     }
   }
 
   async function runPackage(task, account, packageName, csvFile) {
     const dryRun = task.options?.dryRun !== false;
-    log("info", "开始处理定向包", { accountRemark: account.accountRemark, packageName, dryRun });
+    log("info", "开始处理定向包", { searchText: account.searchText, packageName, dryRun });
     await findAndOpenPackage(packageName, dryRun);
     await openRegionBatchImport(dryRun);
     if (dryRun) {
@@ -644,24 +662,75 @@
     log("info", "定向包处理完成", { packageName });
   }
 
-  async function findAndEnterAccount(accountRemark, dryRun) {
+  async function findAccountNodes(task, account, dryRun) {
+    const searchText = account.searchText;
     const searchInput = findFirstSelector(SELECTORS.accountSearchInput);
     if (searchInput) {
-      await fillInput(searchInput, accountRemark);
+      await fillInput(searchInput, searchText);
       await sleep(1000);
-      log("info", "已输入账户备注搜索", { accountRemark });
+      log("info", "已输入业务线/备注搜索词", { searchText });
     } else {
-      log("warn", "未找到搜索框，将尝试直接文本定位账户", { accountRemark });
+      log("warn", "未找到搜索框，将尝试直接文本定位账户", { searchText });
     }
 
-    const accountNode = findElementByText([accountRemark]);
-    if (!accountNode) throw new Error(`ACCOUNT_NOT_FOUND: ${accountRemark}`);
-    if (dryRun) {
-      log("info", "dryRun 定位到账户搜索词，不点击进入", { accountRemark });
-      return;
+    const nodes = findAccountCandidates(task, searchText);
+    if (!nodes.length) throw new Error(`ACCOUNT_NOT_FOUND: ${searchText}`);
+    log("info", "已定位账户候选", {
+      searchText,
+      count: nodes.length,
+      dryRun,
+      remarkKeywords: task.filters.remarkKeywords || [],
+    });
+    return nodes;
+  }
+
+  function findAccountCandidates(task, searchText) {
+    const keywords = task.mode === "businessLine" ? task.filters.remarkKeywords || [] : [];
+    const textNodes = findElementsByText([searchText]);
+    const candidateRows = uniqueElements(
+      textNodes.map((node) => node.closest("tr") || node.closest('[role="row"]') || node.closest("li") || node)
+    );
+    if (keywords.length) {
+      return candidateRows.filter((node) => keywords.some((keyword) => normalizeText(node.textContent).includes(normalizeText(keyword))));
     }
+    return candidateRows.length ? candidateRows : textNodes;
+  }
+
+  async function enterAccountNode(accountNode) {
     clickElement(accountNode);
     await sleep(1800);
+  }
+
+  function uniqueElements(elements) {
+    const seen = new Set();
+    return elements.filter((element) => {
+      if (!element || seen.has(element)) return false;
+      seen.add(element);
+      return true;
+    });
+  }
+
+  function findElementsByText(texts, root = document.body) {
+    const candidates = Array.from(root.querySelectorAll("button, a, span, div, td, th, p, label, li"));
+    const matched = candidates.filter((node) => isVisible(node) && texts.some((text) => normalizeText(node.textContent).includes(normalizeText(text))));
+    const shortestFirst = matched.sort((left, right) => normalizeText(left.textContent).length - normalizeText(right.textContent).length);
+    return shortestFirst.slice(0, 20);
+  }
+
+  async function findAndEnterAccount(accountRemark, dryRun) {
+    const accountNodes = await findAccountNodes(
+      {
+        mode: "accountList",
+        filters: { remarkKeywords: [] },
+      },
+      createSearchAccount({ searchText: accountRemark, displayName: accountRemark }),
+      dryRun
+    );
+    if (dryRun) {
+      log("info", "dryRun 定位到账户搜索词，不点击进入", { accountRemark, matchedCount: accountNodes.length });
+      return;
+    }
+    await enterAccountNode(accountNodes[0]);
   }
 
   async function closePopupIfPresent() {
